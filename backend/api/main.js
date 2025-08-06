@@ -5,7 +5,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
+const puppeteer = require('puppeteer');
+const { chromium } = require('@playwright/test');
 
 const app = express();
 app.use(cors());
@@ -46,7 +47,7 @@ async function fetchPage(url, retries = 3) {
           break;
         }
       }
-      browser = await chromium.launch(launchOptions);
+      browser = await puppeteer.launch(launchOptions);
       const page = await browser.newPage();
 
       // Rotate user agent
@@ -75,10 +76,9 @@ async function scrapeNoonProducts() {
   const seenProductIds = new Set();
   const maxPages = isVercel ? 1 : 2;
 
-  // Puppeteer browser setup
+  // Playwright browser setup
   let browser;
   try {
-    // Use the same launch logic as fetchPage
     let launchOptions = {
       headless: true,
       args: [
@@ -89,26 +89,13 @@ async function scrapeNoonProducts() {
         '--no-zygote'
       ]
     };
-    const chromePaths = [
-      'D:/The Hedge Collective/NoonMintues/chrome.exe',
-      'D:/The Hedge Collective/NoonMintues/chrome.exe'
-    ];
-    const fs = require('fs');
-    for (const chromePath of chromePaths) {
-      if (fs.existsSync(chromePath)) {
-        launchOptions.executablePath = chromePath;
-        break;
-      }
-    }
     browser = await chromium.launch(launchOptions);
-    const page = await browser.newPage();
-
     while (nextPageUrl && pageNum <= maxPages) {
       console.log(`Scraping page ${pageNum}`);
-      // Rotate user agent
       const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-      await page.setUserAgent(userAgent);
-      await page.goto(nextPageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      const context = await browser.newContext({ userAgent });
+      const page = await context.newPage();
+      await page.goto(nextPageUrl, { waitUntil: 'networkidle' });
 
       // Extract product data from the page
       const { products, nextHref } = await page.evaluate(() => {
@@ -265,7 +252,7 @@ app.get('/product-details/:product_id', async (req, res) => {
         break;
       }
     }
-    browser = await chromium.launch(launchOptions);
+    browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
     // Rotate user agent
     const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
