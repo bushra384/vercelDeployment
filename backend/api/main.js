@@ -5,6 +5,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
+const puppeteer = require('puppeteer');
 
 const app = express();
 app.use(cors());
@@ -26,19 +27,42 @@ const USER_AGENTS = [
 // Helper to fetch and parse a page with timeout and retry logic
 async function fetchPage(url, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
+    let browser;
     try {
-      // Pick a random user agent for each request
+      // Try launching with system Chrome if available, else default
+      let launchOptions = {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      };
+      // Try to use system Chrome if on Windows
+      const chromePaths = [
+        'D:/The Hedge Collective/NoonMintues/chrome.exe',
+        'D:/The Hedge Collective/NoonMintues/chrome.exe'
+      ];
+      const fs = require('fs');
+      for (const chromePath of chromePaths) {
+        if (fs.existsSync(chromePath)) {
+          launchOptions.executablePath = chromePath;
+          break;
+        }
+      }
+      browser = await puppeteer.launch(launchOptions);
+      const page = await browser.newPage();
+
+      // Rotate user agent
       const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-      const { data } = await axios.get(url, {
-        headers: { 'User-Agent': userAgent },
-        timeout: 15000000 // 15 seconds
-      });
-      console.log("Fetched HTML snippet:", data.slice(0, 300)); // Add this
-      return cheerio.load(data);
+      await page.setUserAgent(userAgent);
+
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+      const html = await page.content();
+
+      await browser.close();
+      return html; // Return HTML string
     } catch (err) {
+      if (browser) await browser.close();
       console.error(`fetchPage error (attempt ${attempt}):`, err.code || err.message);
       if (attempt === retries) throw new Error(`Failed to fetch ${url}: ${err.code || err.message}`);
-      await new Promise(r => setTimeout(r, 2000)); // wait 2 sec before retry
+      await new Promise(r => setTimeout(r, 2000));
     }
   }
 }
@@ -46,81 +70,125 @@ async function fetchPage(url, retries = 3) {
 // Scrape all fruits and vegetables products
 async function scrapeNoonProducts() {
   let allProducts = [];
-  let page = 1;
+  let pageNum = 1;
   let nextPageUrl = 'https://minutes.noon.com/uae-en/search/?f[category]=fruits_vegetables';
   const seenProductIds = new Set();
-  // Limit pages if on Vercel
-  const maxPages = isVercel ? 1 : 2; // 1 page on Vercel, up to 10 locally
-  while (nextPageUrl && page <= maxPages) {
-    console.log(`Scraping page ${page}`);
-    const $ = await fetchPage(nextPageUrl);
-    const productCards = $("div.catalogList_instantCatalogList__gUTOP a");
-    if (!productCards.length) break;
-    let pageProducts = 0;
-    productCards.each((i, el) => {
-      const card = $(el);
-      // Extract product ID from href
-      const href = card.attr('href') || '';
-      let product_id = null;
-      const match = href.match(/\/now-product\/([^/]+)\//);
-      if (match) product_id = match[1];
-      if (!product_id || seenProductIds.has(product_id)) return;
-      seenProductIds.add(product_id);
-      // Extract text data
-      const data = card.text().split('\n').map(s => s.trim()).filter(Boolean);
-      // Filter promotional/non-product elements
-      const filtered = data.filter(item => {
-        if (["ADD", "OFF", "ON", "SALE", "NEW", "HOT"].includes(item.toUpperCase())) return false;
-        if (/%/.test(item)) return false;
-        if (/^AED/.test(item)) return false;
-        if (/^\d{1,2}$/.test(item)) return false;
-        if (/^[A-Za-z]{1,2}$/.test(item)) return false;
-        return true;
-      });
-      if (filtered.length < 3) return;
-      // Image
-      let image_url = '';
-      const img = card.find('img');
-      if (img.length) {
-        const src = img.attr('src');
-        if (src && src.includes('f.nooncdn.com/')) image_url = src;
+  const maxPages = isVercel ? 1 : 2;
+
+  // Puppeteer browser setup
+  let browser;
+  try {
+    // Use the same launch logic as fetchPage
+    let launchOptions = {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
+    const chromePaths = [
+      'D:/The Hedge Collective/NoonMintues/chrome.exe',
+      'D:/The Hedge Collective/NoonMintues/chrome.exe'
+    ];
+    const fs = require('fs');
+    for (const chromePath of chromePaths) {
+      if (fs.existsSync(chromePath)) {
+        launchOptions.executablePath = chromePath;
+        break;
       }
-      // Price
-      let price = '', original_price = '';
-      const prices = filtered.filter(d => /AED|\d+[.,]?\d*/.test(d)).map(d => d.replace('AED', '').trim());
-      if (prices.length === 1) price = prices[0];
-      if (prices.length >= 2) { price = prices[0]; original_price = prices[1]; }
-      // Product object
-      allProducts.push({
-        product_id,
-        origin: filtered[0] || '',
-        name: filtered[1] || '',
-        size: filtered[2] || '',
-        price,
-        original_price,
-        image_url,
-        page
+    }
+    browser = await puppeteer.launch(launchOptions);
+    const page = await browser.newPage();
+
+    while (nextPageUrl && pageNum <= maxPages) {
+      console.log(`Scraping page ${pageNum}`);
+      // Rotate user agent
+      const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+      await page.setUserAgent(userAgent);
+      await page.goto(nextPageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+
+      // Extract product data from the page
+      const { products, nextHref } = await page.evaluate(() => {
+        const productCards = Array.from(document.querySelectorAll('div.catalogList_instantCatalogList__gUTOP a'));
+        const products = [];
+        const seenProductIds = new Set();
+        for (const card of productCards) {
+          // Extract product ID from href
+          const href = card.getAttribute('href') || '';
+          let product_id = null;
+          const match = href.match(/\/now-product\/([^/]+)\//);
+          if (match) product_id = match[1];
+          if (!product_id || seenProductIds.has(product_id)) continue;
+          seenProductIds.add(product_id);
+
+          // Extract text data
+          const data = card.innerText.split('\n').map(s => s.trim()).filter(Boolean);
+          // Filter promotional/non-product elements
+          const filtered = data.filter(item => {
+            if (["ADD", "OFF", "ON", "SALE", "NEW", "HOT"].includes(item.toUpperCase())) return false;
+            if (/%/.test(item)) return false;
+            if (/^AED/.test(item)) return false;
+            if (/^\d{1,2}$/.test(item)) return false;
+            if (/^[A-Za-z]{1,2}$/.test(item)) return false;
+            return true;
+          });
+          if (filtered.length < 3) continue;
+
+          // Image
+          let image_url = '';
+          const img = card.querySelector('img');
+          if (img) {
+            const src = img.getAttribute('src');
+            if (src && src.includes('f.nooncdn.com/')) image_url = src;
+          }
+
+          // Price
+          let price = '', original_price = '';
+          const prices = filtered.filter(d => /AED|\d+[.,]?\d*/.test(d)).map(d => d.replace('AED', '').trim());
+          if (prices.length === 1) price = prices[0];
+          if (prices.length >= 2) { price = prices[0]; original_price = prices[1]; }
+
+          products.push({
+            product_id,
+            origin: filtered[0] || '',
+            name: filtered[1] || '',
+            size: filtered[2] || '',
+            price,
+            original_price,
+            image_url
+          });
+        }
+        // Find next page link
+        let nextHref = null;
+        const nextBtn = document.querySelector("a[role='button'][aria-label='Next page'][rel='next'][aria-disabled='false']");
+        if (nextBtn) {
+          nextHref = nextBtn.getAttribute('href');
+        }
+        return { products, nextHref };
       });
-      pageProducts++;
-    });
-    // Find next page link
-    const nextBtn = $("a[role='button'][aria-label='Next page'][rel='next'][aria-disabled='false']");
-    if (nextBtn.length) {
-      let nextHref = nextBtn.attr('href');
-      if (nextHref) {
+
+      // Add page number and filter duplicates
+      for (const prod of products) {
+        if (!seenProductIds.has(prod.product_id)) {
+          seenProductIds.add(prod.product_id);
+          allProducts.push({ ...prod, page: pageNum });
+        }
+      }
+
+      // Prepare for next page
+      if (products.length && nextHref) {
         nextPageUrl = new URL(nextHref, nextPageUrl).href;
-        page++;
+        pageNum++;
         if (!isVercel) {
           await new Promise(r => setTimeout(r, 2000)); // Only delay locally
         }
       } else {
         break;
       }
-    } else {
-      break;
     }
+    await browser.close();
+    return allProducts;
+  } catch (err) {
+    if (browser) await browser.close();
+    throw err;
   }
-  return allProducts;
 }
 
 app.get('/search', async (req, res) => {
@@ -167,113 +235,161 @@ app.get('/product-details/:product_id', async (req, res) => {
   const { product_id } = req.params;
   const image_url_fallback = req.query.image_url;
 
+  let browser;
   try {
+    // Puppeteer launch options (reuse logic from above)
+    let launchOptions = {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
+    const chromePaths = [
+      'D:/The Hedge Collective/NoonMintues/chrome.exe',
+      'D:/The Hedge Collective/NoonMintues/chrome.exe'
+    ];
+    const fs = require('fs');
+    for (const chromePath of chromePaths) {
+      if (fs.existsSync(chromePath)) {
+        launchOptions.executablePath = chromePath;
+        break;
+      }
+    }
+    browser = await puppeteer.launch(launchOptions);
+    const page = await browser.newPage();
+    // Rotate user agent
+    const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+    await page.setUserAgent(userAgent);
+
     const url = `https://minutes.noon.com/uae-en/now-product/${product_id}/`;
-    const $ = await fetchPage(url);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
-    // Product name
-    const name = $('h1').first().text().trim() || null;
+    // Extract product details from the page
+    const details = await page.evaluate((image_url_fallback) => {
+      // Product name
+      const nameEl = document.querySelector('h1');
+      const name = nameEl && typeof nameEl.innerText === 'string' ? nameEl.innerText.trim() : null;
 
-    // Size
-    let size = null;
-    const infoDiv = $("div[class*='ProductDetails_infoWrapper'] > div").first();
-    if (infoDiv.length) size = infoDiv.text().trim();
+      // Size
+      let size = null;
+      const infoDiv = document.querySelector("div[class*='ProductDetails_infoWrapper'] > div");
+      if (infoDiv && typeof infoDiv.innerText === 'string') size = infoDiv.innerText.trim();
 
-    // Image
-    let image_url = null;
-    $('img').each((i, el) => {
-      const src = $(el).attr('src');
-      if (src && /\/p\/pzsku\//.test(src)) {
-        image_url = src;
-        return false;
-      }
-    });
-    if (!image_url) image_url = image_url_fallback;
-
-    // Description and features
-    let desc = null;
-    let features = [];
-
-    // 1. Try with original selector (Horilla-like structure)
-    const mainDescDiv = $('body > div.layout_pageWrapper__W_ZgS > div:nth-child(2) > div:nth-child(4)');
-    if (mainDescDiv.length) {
-      desc = mainDescDiv.text().trim();
-      const ul = mainDescDiv.find('ul');
-      if (ul.length) {
-        features = ul.find('li').map((i, li) => $(li).text().trim()).get();
-      }
-    }
-
-    // 2. Fallback to older style (description and features in styled div)
-    if (!desc || features.length === 0) {
-      $("div[style*='margin-top: 20px'][style*='color: rgb(126, 133, 155)']").each((i, div) => {
-        const p = $(div).find('p').first();
-        if (p.length) desc = p.text().trim();
-        else desc = $(div).text().trim();
-
-        // Append any <li> inside this block
-        const localFeatures = $(div).find('li').map((i, li) => $(li).text().trim()).get();
-        if (localFeatures.length) features = localFeatures;
-
-        if (desc) return false; // Break loop
-      });
-    }
-
-    // 3. Last resort: heuristic description
-    if (!desc) {
-      $('div').each((i, div) => {
-        const t = $(div).text().trim();
-        if (t && t.length > 30 && t.toLowerCase().includes('fruit')) {
-          desc = t;
-          return false;
+      // Image
+      let image_url = null;
+      const imgs = Array.from(document.querySelectorAll('img'));
+      for (const img of imgs) {
+        const src = img.getAttribute('src');
+        if (src && /\/p\/pzsku\//.test(src)) {
+          image_url = src;
+          break;
         }
-      });
-    }
-
-    // 4. Final fallback for features: find first <ul> in body
-    if (features.length === 0) {
-      const ul = $('ul').first();
-      if (ul.length) {
-        features = ul.find('li').map((i, li) => $(li).text().trim()).get();
       }
-    }
+      if (!image_url) image_url = image_url_fallback;
 
-    // Price logic
-    let price = null, original_price = null;
-    const priceCandidates = [];
-    $("span").each((i, el) => {
-      const txt = $(el).text().trim();
-      if (txt && /AED|د.إ|\d/.test(txt)) priceCandidates.push(txt);
-    });
-    if (priceCandidates.length > 0) price = priceCandidates[0];
-    if (priceCandidates.length > 1) original_price = priceCandidates[1];
+      // Description and features
+      let desc = null;
+      let features = [];
 
-    // Delivery text
-    let delivery = null;
-    $('*').each((i, el) => {
-      const txt = $(el).text().trim();
-      if (/Arrives in/.test(txt)) {
-        delivery = txt;
-        return false;
+      // 1. Try with original selector (Horilla-like structure)
+      const mainDescDiv = document.querySelector('body > div.layout_pageWrapper__W_ZgS > div:nth-child(2) > div:nth-child(4)');
+      if (mainDescDiv && typeof mainDescDiv.innerText === 'string') {
+        desc = mainDescDiv.innerText.trim();
+        const ul = mainDescDiv.querySelector('ul');
+        if (ul) {
+          features = Array.from(ul.querySelectorAll('li'))
+            .map(li => li.innerText ? li.innerText.trim() : '')
+            .filter(Boolean);
+        }
       }
-    });
 
-    // Final response
+      // 2. Fallback to older style (description and features in styled div)
+      if (!desc || features.length === 0) {
+        const descDivs = Array.from(document.querySelectorAll("div[style*='margin-top: 20px'][style*='color: rgb(126, 133, 155)']"));
+        for (const div of descDivs) {
+          let localDesc = null;
+          const p = div.querySelector('p');
+          if (p && typeof p.innerText === 'string') localDesc = p.innerText.trim();
+          else if (typeof div.innerText === 'string') localDesc = div.innerText.trim();
+          if (localDesc && !desc) desc = localDesc;
+          // Append any <li> inside this block
+          const localFeatures = Array.from(div.querySelectorAll('li'))
+            .map(li => li.innerText ? li.innerText.trim() : '')
+            .filter(Boolean);
+          if (localFeatures.length) features = localFeatures;
+          if (desc) break;
+        }
+      }
+
+      // 3. Last resort: heuristic description
+      if (!desc) {
+        const divs = Array.from(document.querySelectorAll('div'));
+        for (const div of divs) {
+          if (typeof div.innerText === 'string') {
+            const t = div.innerText.trim();
+            if (t && t.length > 30 && t.toLowerCase().includes('fruit')) {
+              desc = t;
+              break;
+            }
+          }
+        }
+      }
+
+      // 4. Final fallback for features: find first <ul> in body
+      if (features.length === 0) {
+        const ul = document.querySelector('ul');
+        if (ul) {
+          features = Array.from(ul.querySelectorAll('li'))
+            .map(li => li.innerText ? li.innerText.trim() : '')
+            .filter(Boolean);
+        }
+      }
+
+      // Price logic
+      let price = null, original_price = null;
+      const priceCandidates = [];
+      const spans = Array.from(document.querySelectorAll('span'));
+      for (const el of spans) {
+        if (typeof el.innerText === 'string') {
+          const txt = el.innerText.trim();
+          if (txt && (/AED|د.إ|\d/.test(txt))) priceCandidates.push(txt);
+        }
+      }
+      if (priceCandidates.length > 0) price = priceCandidates[0];
+      if (priceCandidates.length > 1) original_price = priceCandidates[1];
+
+      // Delivery text
+      let delivery = null;
+      const allEls = Array.from(document.querySelectorAll('*'));
+      for (const el of allEls) {
+        if (typeof el.innerText === 'string') {
+          const txt = el.innerText.trim();
+          if (/Arrives in/.test(txt)) {
+            delivery = null;
+            break;
+          }
+        }
+      }
+
+      return {
+        name,
+        size,
+        price,
+        original_price,
+        delivery,
+        description: desc,
+        features,
+        image_url
+      };
+    }, image_url_fallback);
+
     const elapsed = Date.now() - start;
+    await browser.close();
     res.json({
       product_id,
-      name,
-      size,
-      price,
-      original_price,
-      delivery,
-      description: desc,
-      features,
-      image_url,
+      ...details,
       elapsed_ms: elapsed
     });
-
   } catch (e) {
+    if (browser) await browser.close();
     res.status(500).json({ error: e.message });
   }
 });
