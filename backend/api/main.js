@@ -5,7 +5,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 
 const app = express();
 app.use(cors());
@@ -46,7 +46,7 @@ async function fetchPage(url, retries = 3) {
           break;
         }
       }
-      browser = await puppeteer.launch(launchOptions);
+      browser = await chromium.launch(launchOptions);
       const page = await browser.newPage();
 
       // Rotate user agent
@@ -100,7 +100,7 @@ async function scrapeNoonProducts() {
         break;
       }
     }
-    browser = await puppeteer.launch(launchOptions);
+    browser = await chromium.launch(launchOptions);
     const page = await browser.newPage();
 
     while (nextPageUrl && pageNum <= maxPages) {
@@ -265,7 +265,7 @@ app.get('/product-details/:product_id', async (req, res) => {
         break;
       }
     }
-    browser = await puppeteer.launch(launchOptions);
+    browser = await chromium.launch(launchOptions);
     const page = await browser.newPage();
     // Rotate user agent
     const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
