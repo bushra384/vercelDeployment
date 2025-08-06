@@ -31,7 +31,7 @@ async function scrapeNoonProducts() {
   let nextPageUrl = 'https://minutes.noon.com/uae-en/search/?f[category]=fruits_vegetables';
   const seenProductIds = new Set();
   // Limit pages if on Vercel
-  const maxPages = isVercel ? 1 : 10; // 1 page on Vercel, up to 10 locally
+  const maxPages = isVercel ? 1 : 2; // 1 page on Vercel, up to 10 locally
   while (nextPageUrl && page <= maxPages) {
     console.log(`Scraping page ${page}`);
     const $ = await fetchPage(nextPageUrl);
