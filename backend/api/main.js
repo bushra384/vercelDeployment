@@ -81,7 +81,13 @@ async function scrapeNoonProducts() {
     // Use the same launch logic as fetchPage
     let launchOptions = {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote'
+      ]
     };
     const chromePaths = [
       'D:/The Hedge Collective/NoonMintues/chrome.exe',
@@ -240,7 +246,13 @@ app.get('/product-details/:product_id', async (req, res) => {
     // Puppeteer launch options (reuse logic from above)
     let launchOptions = {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote'
+      ]
     };
     const chromePaths = [
       'D:/The Hedge Collective/NoonMintues/chrome.exe',
