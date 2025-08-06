@@ -14,13 +14,24 @@ const PRODUCTS_JSON = path.join(__dirname, '../noon_products.json');
 // Helper to detect Vercel environment
 const isVercel = !!process.env.VERCEL;
 
+// User agents for rotation
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
+];
+
 // Helper to fetch and parse a page with timeout and retry logic
 async function fetchPage(url, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Pick a random user agent for each request
+      const userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
       const { data } = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        timeout: 15000 // increase timeout if needed
+        headers: { 'User-Agent': userAgent },
+        timeout: 15000000 // 15 seconds
       });
       return cheerio.load(data);
     } catch (err) {
