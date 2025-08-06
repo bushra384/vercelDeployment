@@ -1,4 +1,3 @@
-// api/main.js
 const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -94,7 +93,8 @@ app.get('/scrape', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// ❌ DO NOT start server on Vercel
+// app.listen(...)
+
+// ✅ Export the handler for Vercel serverless function
+module.exports = app;
