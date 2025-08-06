@@ -33,6 +33,7 @@ async function fetchPage(url, retries = 3) {
         headers: { 'User-Agent': userAgent },
         timeout: 15000000 // 15 seconds
       });
+      console.log("Fetched HTML snippet:", data.slice(0, 300)); // Add this
       return cheerio.load(data);
     } catch (err) {
       console.error(`fetchPage error (attempt ${attempt}):`, err.code || err.message);
