@@ -14,14 +14,26 @@ const PRODUCTS_JSON = path.join(__dirname, '../noon_products.json');
 // Helper to detect Vercel environment
 const isVercel = !!process.env.VERCEL;
 
-// Helper to fetch and parse a page
-async function fetchPage(url) {
-  const { data } = await axios.get(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0',
-    },
-  });
-  return cheerio.load(data);
+// Helper to fetch and parse a page with timeout and retry logic
+async function fetchPage(url, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const { data } = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
+        timeout: 10000 // 10 seconds
+      });
+      return cheerio.load(data);
+    } catch (err) {
+      console.error(`fetchPage error (attempt ${attempt}):`, err.code || err.message);
+      if (attempt === retries) {
+        throw new Error(`Failed to fetch ${url}: ${err.code || err.message}`);
+      }
+      // Wait a bit before retrying
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
 }
 
 // Scrape all fruits and vegetables products
