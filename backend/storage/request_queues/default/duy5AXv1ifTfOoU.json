@@ -1,0 +1,9 @@
+{
+	"id": "duy5AXv1ifTfOoU",
+	"json": "{\"id\":\"duy5AXv1ifTfOoU\",\"url\":\"https://minutes.noon.com/uae-en/search/?f[category]=fruits_vegetables\",\"uniqueKey\":\"https://minutes.noon.com/uae-en/search?f%5Bcategory%5D=fruits_vegetables\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{}}",
+	"method": "GET",
+	"orderNo": 1754480335267,
+	"retryCount": 0,
+	"uniqueKey": "https://minutes.noon.com/uae-en/search?f%5Bcategory%5D=fruits_vegetables",
+	"url": "https://minutes.noon.com/uae-en/search/?f[category]=fruits_vegetables"
+}
