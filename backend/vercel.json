@@ -12,6 +12,10 @@
       "dest": "api/main.js"
     },
     {
+      "src": "/",
+      "dest": "api/main.js"
+    },
+    {
       "src": "/product-details/(.*)",
       "dest": "api/main.js"
     },
